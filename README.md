@@ -211,7 +211,39 @@ int main(void) {
         return 0;
 }
 ```
+
+## Con dos ultrasonic sensores
+
+##### HC SR04 - 1
+
+Pin 11 - (GPIO 17) - Wiring PI 0 TRIG
+
+Pin 15 - (GPIO 22) - Wiring PI 3 ECHO
+
+ground -> pin 6
+vcc    -> pin 2
+
+##### HC SR04 - 1
+
+Pin 32 - (GPIO 12) - Wiring PI 26
+
+Pin 36 - (GPIO 16) - Wiring PI 27
+
+ground -> pin 39
+vcc    -> pin 4
+
+##### HC SR04 - 1
+
 ## Posibles mejoras
 
 - Meterle vibratto ya sea por un controlador midi o por el paper http://www-classes.usc.edu/engr/ise/599muscog/2004/projects/yang/ 
 - Que vaya por un glisando hasta la sguiente nota 
+
+##### Utilities
+
+```Console
+
+scp ./prueba1midi.c pi@10.231.204.177:prueba.c
+
+
+```
