@@ -243,7 +243,7 @@ vcc    -> pin 4
 
 ```Console
 
-scp ./prueba1midi.c pi@10.231.204.177:prueba.c
+scp ./main.c pi@10.231.204.177:main.c
 
 
 ```

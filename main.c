@@ -25,8 +25,8 @@ const int TRIG[2] = {0, 26};
 const int ECHO[2] = {3, 27};
 
 
-#define ALTURA 0
-#define INTENSIDAD 1
+#define ALTURA 1
+#define INTENSIDAD 0
 #define SAMPLE_RATE 500 // va en milisegundos
 
 
@@ -43,6 +43,42 @@ void setupWiring() {
                 delay(30);
         }
 }
+
+PortMidiStream * setupMIDI(){
+        int cnt,i,dev;
+        PmError retval;  
+        const PmDeviceInfo *info;
+        PortMidiStream* mstream;
+
+        Pm_Initialize();
+  
+        if((cnt = Pm_CountDevices())){  
+                for(i=0; i < cnt; i++){
+                        info = Pm_GetDeviceInfo(i);
+                        if(info->output)
+                                printf("%d: %s \n", i, info->name);
+                        }
+                printf("choose device: ");
+                scanf("%d", &dev); 
+                Pt_Start(1, NULL, NULL);
+                retval = Pm_OpenOutput(&mstream, dev, NULL,512,NULL,NULL,0);
+          
+                if(retval != pmNoError){
+                        printf("error: %s \n", Pm_GetErrorText(retval));
+                        exit(1);        
+                }   
+        } else {
+                printf("No available output devices\n");
+                exit(1);
+        }
+        return mstream;
+}
+
+void closeMIDI(PortMidiStream *mstream){
+        Pm_Close(mstream);
+        Pm_Terminate();
+}
+
  
 float getCM(int numHC) {
         //Send trig1 pulse
@@ -64,17 +100,53 @@ float getCM(int numHC) {
         return distance;
 }
 
-void leerNotas(){
-         calcularIntensidad();
-         calcularAltura();
+int getIntensidad(){
+        int ans = 0;
+        float intensidad = getCM(INTENSIDAD);
+        if ( 6.0 < intensidad && intensidad < 38.0 ){
+                ans = intensidad + 80;
+        }
+        return ans;
+}
+
+int getAltura(){
+        int ans = 0;
+        float altura = getCM(ALTURA);
+        if ( 6.0 < altura && altura < 38.0 ){
+                ans = altura + 56;
+        }
+        return ans;
+}
+// refactorizar a uno para read y otro para play
+void readNotes(PortMidiStream *mstream, int *lastNote, int *lastVelocity, int prg){
+        int newNote = getIntensidad();
+        int newVelocity = getAltura();
+
+        if ((newNote != 0 && newNote != *lastNote) || (newVelocity != 0 && newVelocity != *lastVelocity) ){
+                printf("SONANDO?? V: %d, N %d\n", newVelocity, newNote);
+                char chan = 0;
+                Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_PRG,chan), prg, 0));
+                Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEOFF,chan), *lastNote, *lastVelocity));
+                Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEON,chan), newNote, newVelocity));
+
+                *lastNote = newNote;
+                *lastVelocity = newVelocity;         
+        }
 }
  
 int main(void) {
+        // setup
         setupWiring();
+        PortMidiStream* mstream;
+        mstream = setupMIDI();
         delay(5000);
-        for (int i = 0; i < 20; ++i)
+        // Declare Variables
+        int velocity = 0, note = 0, prg = 0;
+        // Program 
+        while (prg < 800)
         {
-                leerNotas();
+                readNotes(mstream, &note, &velocity, prg);
+                prg = prg + 4; //avanza 4 bytes el MIDI
                 delay(SAMPLE_RATE);
         }
  
