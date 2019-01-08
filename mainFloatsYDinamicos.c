@@ -22,11 +22,9 @@ const int ECHO[2] = {3, 27};
 
 #define ALTURA 0
 #define INTENSIDAD 1
-#define SAMPLE_RATE 500 // va en milisegundos
+#define SAMPLE_RATE 200 // va en milisegundos
 #define SAMPLE_RATE_2 SAMPLE_RATE/2 // va en milisegundos
 #define SAMPLE_RATE_4 SAMPLE_RATE/4 // va en milisegundos
-#define TIEMPO_MAXIMO 3738
-#define TIEMPO_200_MAXIMO 3738 + 200
  
 void setupWiring() {
         wiringPiSetup();
@@ -76,65 +74,92 @@ void closeMIDI(PortMidiStream *mstream){
         Pm_Terminate();
 }
 
-
-int getCM(int numHC) {
-
-        //para generar un pulso limpio ponemos a HIGH 4us
-        digitalWrite(TRIG[numHC], HIGH); 
-        delayMicroseconds(4);
+ 
+float getCM(int numHC) {
+        //Send trig1 pulse
+        digitalWrite(TRIG[numHC], HIGH);
+        delayMicroseconds(20);
         digitalWrite(TRIG[numHC], LOW);
-        delayMicroseconds(10);
-        while (digitalRead(ECHO[numHC]) == LOW);
-
+ 
+        //Wait for echo1 start
+        while(digitalRead(ECHO[numHC]) == LOW);
+ 
+        //Wait for echo1 end
         long startTime = micros();
-        while ((digitalRead(ECHO[numHC]) == HIGH) && ((micros() - startTime) < TIEMPO_MAXIMO));
-
+        while(digitalRead(ECHO[numHC]) == HIGH);
         long travelTime = micros() - startTime;
-        while ((micros() - startTime) < TIEMPO_200_MAXIMO);
-
-        int distance = 0;
-        if (travelTime < TIEMPO_MAXIMO){
-                distance = travelTime / 58;
-        }
-
+ 
+        //Get distance in cm
+        float distance = (float) travelTime / 58.0f; // Si se baja los "cm" se hacen mas grandes . 58 es el normal
+ 
         return distance;
 }
 
-inline int filtroIntensidad(int unidades){
-        return unidades * 2;
-}
-
-
-inline int filtroAltura( int unidades){
-        return (unidades != 0)? (((unidades * 2) / 5/* / 2.5*/) + 60): 0;
-}
-
-
-int readNotes( int *note, int *velocity){
-        
-        int nowV = filtroIntensidad(getCM(INTENSIDAD));
-        int nowN = filtroAltura(getCM(ALTURA));
-        #ifdef DEBUGGING
-                printf("NOW //// V: %d, N %d  \n", nowV, nowN);
-        #endif
-        int ans = ((nowN != 0 && nowN != *note) || (nowV != 0 && nowV != *velocity));
-        if(ans){
-                *note = nowN;
-                *velocity = nowV;
+int getIntensidad(){
+        int ans = 0;
+        float intensidad = getCM(INTENSIDAD);
+        if ( 6.0 < intensidad && intensidad < 36.0 ){
+                ans = (int) (intensidad - 5) * 4;
         }
-                
         return ans;
 }
 
-void play(PortMidiStream *mstream, int* lastNote, int* lastVelocity, int newNote, int newVelocity, int prg){
+int getAlturaInit( float *distanciaNota){
+        int ans = 0;
+        *distanciaNota = getCM(ALTURA);
+        if ( 6.0 < *distanciaNota && *distanciaNota < 50.0 ){
+                ans = (*distanciaNota + 46);
+        }
+        return ans;
+}
+
+int filtroAltura( float distanciaNota){
+        int ans = 0;
+        if ( 6.0 < distanciaNota && distanciaNota < 50.0 ){
+                ans = ((int) distanciaNota + 46);
+        }
+        return ans;
+}
+
+void readNotesInit(int *note, int *velocity, float *distanciaNota){
+        *note = getAlturaInit(distanciaNota);
+        *velocity = getIntensidad();
+}
+
+int readNotes( int *note, int *velocity){
+        float newIntervalo =   getCM(ALTURA) - *distanciaNota;
+        #ifdef DEBUGGING
+                        printf("NOW //// intervalo: %f \n", newIntervalo);
+        #endif
+        int ans = 0;
+        if ( -1.0f > newIntervalo || newIntervalo > 1.0f)
+        {
+                int nowV = getIntensidad();
+                int nowN = filtroAltura(*distanciaNota + newIntervalo);
+                #ifdef DEBUGGING
+                        printf("NOW //// V: %d, N %d  \n", nowV, nowN);
+                #endif
+                ans = ((nowN != 0 && nowN != *note) || (nowV != 0 && nowV != *velocity));
+                if(ans){
+                        *note = nowN;
+                        *velocity = nowV;
+                        *distanciaNota = newIntervalo + *distanciaNota;
+                }
+                
+        }
+        return ans;
+}
+
+void play(PortMidiStream *mstream, int* lastNote, int* lastVelocity, int newNote, int newVelocity ){
 
                 #ifdef DEBUGGING
                         printf("SONANDO?? V: %d, N %d  \n", newVelocity, newNote);
                 #else
                 char chan = 0;
 
-                Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_PRG,chan), prg, 0));      
+                //Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_PRG,chan), prg, 0));      
                 Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEOFF,chan), *lastNote, *lastVelocity));
+                delay(1);
                 Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEON,chan), newNote, newVelocity));  
                 *lastNote = newNote;
                 *lastVelocity = newVelocity;
@@ -156,15 +181,15 @@ int main(void) {
         mstream = setupMIDI();
         cuentaAtras();
         // Declare Variables
-        int velocity = 0, note = 0,lastNote = 0, lastVelocity = 0, prg = 0, playIt = 0;
+        int velocity = 0, note = 0,lastNote = 0, lastVelocity = 0, prg = 0, playIt = 1;
+        readNotesInit( &note, &velocity, &distanciaNota);
         // Program 
         while (prg < 1600) {
-                playIt = readNotes(&note, &velocity);
                 if (playIt) 
-                        play(mstream, &lastNote, &lastVelocity, note, velocity, prg);
-
-                delay(SAMPLE_RATE);
-                prg+=4;
+                        play(mstream, &lastNote, &lastVelocity, note, velocity);
+                delay(SAMPLE_RATE_2);
+                playIt = readNotes(&note, &velocity, &distanciaNota);
+                prg++;
         }
  
         return 0;
