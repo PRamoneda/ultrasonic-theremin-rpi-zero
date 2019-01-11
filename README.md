@@ -1,5 +1,68 @@
+# Trabajo de la asignatura Sistemas Empotrados 2
 
-# Raspbian setup  
+## Audio, Linux y tiempo real.
+
+La idea del trabajo era hacer una primera aproximación a un sistema de audio en tiempo real y con sistema operativo. Por ello, lo mas sencillo para hacer un sistema completo ha sido hacer un controlador MIDI. En concreto se ha hecho un theremin MIDI. Lo bueno de usar este protocolo es que desacopla la activación del sonido a la sintetizacion del sonido. Dicho de otra manera, que por una parte se pueden hacer una serie de controladores desde los cuales calcular las variables del sonido, mandar el sonido a otro dispositivo por medio de MIDI y este último dispositivo que sintetice el sonido como sea debido.
+
+Desde el punto de vista del intérprete se han de conseguir buenos tiempos de reacción de los instrumentos electrónicos, para tener un buen manejo y percepción del sonido. En concreto los tiempos de latencia han de estar entre 15ms y 30 ms para que se pueda considerar "tiempo real". Por eso, este era el principal requisito. Adjunto un artículo de Ge Wang sobre la creación de nuevos instrumentos electronicos musicales.
+
+## Theremin
+
+El theremin, ollamado en un principio eterófono, thereminófono, termenvox o thereminvox,es considerado uno de los primeros instrumentos musicales electrónicos. Se controla sin que haya contacto físico entre el intérprete y el instrumento.
+
+El instrumento está formado por dos antenas metálicas que detectan la posición relativa de las manos del thereminista y los osciladores para controlar la frecuencia (altura) con una mano y la amplitud (volumen o intensidad) con la otra. Las señales eléctricas se amplifican por medio de un amplificador y son emitidas por altavoces.
+
+Se ha elegido este instrumento por su relativa sensillez. Así como la librería **portMidi y wiringPi** . Aunque a posteriori, habría sido interesante utilizar el framework JUCE https://www.youtube.com/watch?v=jq7zUKEcyzI .
+
+
+En mi caso solamente he desactivado los servicios que tenía instalados. Ya que utilizaba Raspbian Lite y muchas cosas  no las tenía.
+
+Fuente: https://wiki.linuxaudio.org/wiki/raspberrypi
+
+```Console
+## Stop the ntp service
+sudo service ntp stop
+
+## Stop the triggerhappy service
+sudo service triggerhappy stop
+
+## Stop the dbus service. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+sudo service dbus stop
+
+## Stop the console-kit-daemon service. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+sudo killall console-kit-daemon
+
+## Stop the polkitd service. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+sudo killall polkitd
+
+## Only needed when Jack2 is compiled with D-Bus support (Jack2 in the AutoStatic RPi audio repo is compiled without D-Bus support)
+#export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
+
+## Remount /dev/shm to prevent memory allocation errors
+sudo mount -o remount,size=128M /dev/shm
+
+## Kill the usespace gnome virtual filesystem daemon. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+killall gvfsd
+
+## Kill the userspace D-Bus daemon. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+killall dbus-daemon
+
+## Kill the userspace dbus-launch daemon. Warning: this can cause unpredictable behaviour when running a desktop environment on the RPi
+killall dbus-launch
+
+## Uncomment if you'd like to disable the network adapter completely
+#echo -n “1-1.1:1.0” | sudo tee /sys/bus/usb/drivers/smsc95xx/unbind
+## In case the above line doesn't work try the following
+#echo -n “1-1.1” | sudo tee /sys/bus/usb/drivers/usb/unbind
+
+## Set the CPU scaling governor to performance
+echo -n performance | sudo tee /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+```
+
+
+
+
+## Raspbian setup  
 
 Para raspberry normal
 
@@ -14,7 +77,7 @@ Para conectarse por ssh:
 Escaneo mi red local con Angry Ip Scanner para ver en que dirección está la raspberry.
 
 ```
-ssh pi@10.231.204.177
+  
 contraseña: raspberry
 ```
 
@@ -51,68 +114,12 @@ gcc -o prg pmidiout.c -I/usr/local/include -L/usr/local/lib -lportmidi
 Instalación:
 
 ```
-apt install libportmidi-dev
+sudo apt install libportmidi-dev
 ```
 
 Ejecución:
-```C
-#include <stdio.h>
-#include <portmidi.h>
-#include <porttime.h>
 
-
-#define MD_NOTEON 0x90
-#define MD_NOTEOFF 0x80
-#define MD_PRG  0xC0
-#define SBYTE(mess,chan) mess | chan
-
-int main() {
-
-int cnt,i,dev;
-PmError retval;  
-const PmDeviceInfo *info;
-PortMidiStream *mstream;
-
-Pm_Initialize();
-  
-if((cnt = Pm_CountDevices())){
-
-  for(i=0; i < cnt; i++){
-   info = Pm_GetDeviceInfo(i);
-   if(info->output)
-    printf("%d: %s \n", i, info->name);
-  }
-  printf("choose device: ");
-  scanf("%d", &dev); 
-  Pt_Start(1, NULL, NULL);
-  retval = Pm_OpenOutput(&mstream, dev, 
-           NULL,512,NULL,NULL,0);
-  
-  if(retval != pmNoError)    
-     printf("error: %s \n", Pm_GetErrorText(retval));
-  else {
-    char chan = 0;
-    int  prg = 0;
-    long time = 0;
-    for(i=60; i < 72; prg+=4, i++){
-      Pm_WriteShort(mstream, 0, 
-         Pm_Message(SBYTE(MD_PRG,chan), prg, 0));
-      time = Pt_Time(NULL);
-      Pm_WriteShort(mstream, 0, 
-         Pm_Message(SBYTE(MD_NOTEON,chan), i, 120));
-      while(Pt_Time(NULL) - time < 1000);
-      Pm_WriteShort(mstream, 0, 
-         Pm_Message(SBYTE(MD_NOTEOFF,chan), i, 120));
-    }
-  }
-  Pm_Close(mstream);  
-} else printf("No available output devices\n");
-
-Pm_Terminate();
-return 0;
-}
-
-```
+Los fuentes están en el repositorio de github.
 
 ```
 gcc -o prg prueba1midi.c -I/usr/local/include -L/usr/local/lib -lportmidi
@@ -127,6 +134,9 @@ choose device: 2
 ## Para probar sensor ultrasonico
 
 Instalar Bcm2385.h
+
+En un principio se exploró la idea de utilizar esta librería, pero se desechó debido al gran numero de problemas que causaba y su alto tiempo de respuesta.
+
 ```
 sudo apt-get install html-xml-utils
 mkdir -p bcm2835 && (wget -qO - `curl -sL http://www.airspayce.com/mikem/bcm2835 | hxnormalize -x -e | hxselect -s '\n' -c "div.textblock>p:nth-child(4)>a:nth-child(1)"` | tar xz --strip-components=1 -C bcm2835 )
@@ -135,13 +145,12 @@ cd bcm2835
 make
 sudo make install
 ```
-Connect the trigger pin of the HC-SR04 sensor to Pin 11 (GPIO 17) on the raspberry pi and connect the echo pin on the sensor to Pin 15 (GPIO 22) on the pi. Also connect +5V and GND either from the pi or an external power supply.
 
 ```
 gcc -o prg main.c HC_SR04.c -l bcm2835
 ```
 
-**lo de arriba no funciona.... PlanB**
+**La libreria de arriba va como el culo.... PlanB**
 
 ### WiringPi
 ```Console
@@ -212,7 +221,7 @@ int main(void) {
 }
 ```
 
-## Con dos ultrasonic sensores
+## Con dos sensores de ultrasonido HC-SR04. Mapa de conexiones.
 
 ##### HC SR04 - 1
 
@@ -225,9 +234,9 @@ vcc    -> pin 2
 
 ##### HC SR04 - 1
 
-Pin 32 - (GPIO 12) - Wiring PI 26
+Pin 32 - (GPIO 12) - Wiring PI 26 TRIG
 
-Pin 36 - (GPIO 16) - Wiring PI 27
+Pin 36 - (GPIO 16) - Wiring PI 27 ECHO
 
 ground -> pin 39
 vcc    -> pin 4
@@ -237,9 +246,29 @@ vcc    -> pin 4
 ## Posibles mejoras
 
 - Meterle vibratto ya sea por un controlador midi o por el paper http://www-classes.usc.edu/engr/ise/599muscog/2004/projects/yang/ 
-- Que vaya por un glisando hasta la sguiente nota 
 
-##### Utilities
+- Que vaya por un glisando hasta la siguiente nota (hecha desde ableton)
+
+- Hacer un theremin con CV
+
+- Hacer un theremin con un iPhone y un iWatch
+
+### Compilación del programa
+
+```Console
+
+gcc -o prg main.c -I/usr/local/include -L/usr/local/lib -lportmidi -lwiringPi
+```
+
+### Ejecución del programa
+```Console
+
+./main 
+```
+
+
+
+##### Utilidades
 
 ```Console
 
@@ -247,3 +276,8 @@ scp ./main.c pi@10.231.204.177:main.c
 
 
 ```
+
+Como hacer un sintetizador que parezca un theremin para Ableton Live.
+
+https://music.tutsplus.com/tutorials/quick-tip-how-to-emulate-a-theremin-sound-in-ableton-live--audio-6198
+

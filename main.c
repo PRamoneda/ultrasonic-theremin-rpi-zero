@@ -7,6 +7,7 @@
 #include <porttime.h>
 
 // #define DEBUGGING 1
+// #define DEBUGGING_SAMPLE_RATE 1
 #define MD_NOTEON 0x90
 #define MD_NOTEOFF 0x80
 #define MD_PRG  0xC0
@@ -22,9 +23,9 @@ const int ECHO[2] = {3, 27};
 
 #define ALTURA 0
 #define INTENSIDAD 1
-#define SAMPLE_RATE 500 // va en milisegundos
-#define SAMPLE_RATE_2 SAMPLE_RATE/2 // va en milisegundos
-#define SAMPLE_RATE_4 SAMPLE_RATE/4 // va en milisegundos
+#define SAMPLE_RATE 10000 // va en us
+#define SAMPLE_RATE_2 SAMPLE_RATE/2 // va en us
+#define SAMPLE_RATE_4 SAMPLE_RATE/4 // va en us
 #define TIEMPO_MAXIMO 3738
 #define TIEMPO_200_MAXIMO 3738 + 200
  
@@ -83,7 +84,7 @@ int getCM(int numHC) {
         digitalWrite(TRIG[numHC], HIGH); 
         delayMicroseconds(4);
         digitalWrite(TRIG[numHC], LOW);
-        delayMicroseconds(10);
+        // delayMicroseconds(10);
         while (digitalRead(ECHO[numHC]) == LOW);
 
         long startTime = micros();
@@ -100,13 +101,14 @@ int getCM(int numHC) {
         return distance;
 }
 
-inline int filtroIntensidad(int unidades){
-        return unidades * 2;
+int filtroIntensidad(int unidades){
+        int ans = unidades * 2 + 40;
+        return (ans >125)? 125: ans;
 }
 
 
-inline int filtroAltura( int unidades){
-        return (unidades != 0)? (((unidades * 2) / 5/* / 2.5*/) + 60): 0;
+int filtroAltura( int unidades){
+        return (unidades != 0)? (((unidades * 3) / 2/* / 1.5*/) + 30): 0;
 }
 
 
@@ -117,7 +119,7 @@ int readNotes( int *note, int *velocity){
         #ifdef DEBUGGING
                 printf("NOW //// V: %d, N %d  \n", nowV, nowN);
         #endif
-        int ans = ((nowN != 0 && nowN != *note) || (nowV != 0 && nowV != *velocity));
+        int ans = ((nowN != 0 && nowN != *note)); //(nowV != 0 && nowV != *velocity));
         if(ans){
                 *note = nowN;
                 *velocity = nowV;
@@ -134,7 +136,7 @@ void play(PortMidiStream *mstream, int* lastNote, int* lastVelocity, int newNote
                 char chan = 0;
 
                 Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_PRG,chan), prg, 0));      
-                Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEOFF,chan), *lastNote, *lastVelocity));
+                //Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEOFF,chan), *lastNote, *lastVelocity));
                 Pm_WriteShort(mstream, 0, Pm_Message(SBYTE(MD_NOTEON,chan), newNote, newVelocity));  
                 *lastNote = newNote;
                 *lastVelocity = newVelocity;
@@ -158,12 +160,17 @@ int main(void) {
         // Declare Variables
         int velocity = 0, note = 0,lastNote = 0, lastVelocity = 0, prg = 0, playIt = 0;
         // Program 
-        while (prg < 1600) {
+        while (prg < 160000) {
+                long startTimeSampleRate = micros();
                 playIt = readNotes(&note, &velocity);
                 if (playIt) 
                         play(mstream, &lastNote, &lastVelocity, note, velocity, prg);
 
-                delay(SAMPLE_RATE);
+                #ifdef DEBUGGING_SAMPLE_RATE
+                        long endTimeSampleRate = micros();
+                        printf("| %ld us \n", endTimeSampleRate - startTimeSampleRate);
+                #endif
+                while ( ((micros() - startTimeSampleRate) < SAMPLE_RATE));
                 prg+=4;
         }
  
